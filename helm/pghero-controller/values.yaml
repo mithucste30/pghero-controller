@@ -288,3 +288,24 @@ pghero:
 
   # Additional volume mounts
   volumeMounts: []
+
+# PostgreSQL subchart configuration
+postgresql:
+  # Enable PostgreSQL deployment
+  enabled: false
+
+  # PostgreSQL authentication
+  auth:
+    username: pghero
+    password: pghero123
+    database: pgherodb
+
+  # PostgreSQL primary configuration
+  primary:
+    persistence:
+      enabled: true
+      size: 8Gi
+
+  # PostgreSQL metrics
+  metrics:
+    enabled: false

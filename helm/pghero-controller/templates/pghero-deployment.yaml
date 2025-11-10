@@ -47,11 +47,8 @@ spec:
         {{- with .Values.pghero.env }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-        volumeMounts:
-        - name: config
-          mountPath: /app/config
-          readOnly: true
         {{- with .Values.pghero.volumeMounts }}
+        volumeMounts:
         {{- toYaml . | nindent 8 }}
         {{- end }}
         livenessProbe:
@@ -70,11 +67,8 @@ spec:
           {{- toYaml .Values.pghero.resources | nindent 10 }}
         securityContext:
           {{- toYaml .Values.pghero.securityContext | nindent 10 }}
-      volumes:
-      - name: config
-        configMap:
-          name: {{ include "pghero-controller.fullname" . }}-pghero-config
       {{- with .Values.pghero.volumes }}
+      volumes:
       {{- toYaml . | nindent 6 }}
       {{- end }}
       {{- with .Values.pghero.nodeSelector }}
