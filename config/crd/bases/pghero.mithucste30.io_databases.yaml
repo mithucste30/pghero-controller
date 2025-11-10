@@ -1,0 +1,210 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: databases.pghero.mithucste30.io
+spec:
+  group: pghero.mithucste30.io
+  names:
+    kind: Database
+    listKind: DatabaseList
+    plural: databases
+    shortNames:
+    - db
+    - pgdb
+    singular: database
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.name
+      name: Database Name
+      type: string
+    - jsonPath: .spec.databaseType
+      name: Type
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Database is the Schema for the databases API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: DatabaseSpec defines the desired state of Database
+            properties:
+              databaseType:
+                default: postgresql
+                description: DatabaseType specifies the type of database (postgresql,
+                  mysql, etc.)
+                enum:
+                - postgresql
+                - mysql
+                type: string
+              enabled:
+                default: true
+                description: Enabled determines if this database connection should
+                  be active in PgHero
+                type: boolean
+              name:
+                description: Name is a friendly name for the database connection
+                type: string
+              url:
+                description: |-
+                  URL is the database connection URL
+                  Can reference a secret using syntax: secret://namespace/secret-name/key
+                type: string
+              urlFromSecret:
+                description: URLFromSecret references a Kubernetes secret containing
+                  the database URL
+                properties:
+                  key:
+                    description: Key is the key within the secret
+                    type: string
+                  name:
+                    description: Name is the name of the secret
+                    type: string
+                  namespace:
+                    description: Namespace is the namespace of the secret (defaults
+                      to same namespace as Database resource)
+                    type: string
+                required:
+                - key
+                - name
+                type: object
+            required:
+            - name
+            - url
+            type: object
+          status:
+            description: DatabaseStatus defines the observed state of Database
+            properties:
+              conditions:
+                description: Conditions represent the latest available observations
+                  of the Database's state
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              configMapRef:
+                description: ConfigMapRef references the ConfigMap where the database
+                  configuration is stored
+                type: string
+              connectionStatus:
+                description: ConnectionStatus indicates if the database is reachable
+                type: string
+              extensionsReady:
+                description: ExtensionsReady indicates if required extensions are
+                  installed and configured
+                type: boolean
+              installedExtensions:
+                description: InstalledExtensions lists the extensions that are currently
+                  installed
+                items:
+                  type: string
+                type: array
+              lastError:
+                description: LastError stores the last error encountered during setup
+                type: string
+              lastUpdated:
+                description: LastUpdated is the timestamp when the status was last
+                  updated
+                format: date-time
+                type: string
+              message:
+                description: Message provides additional information about the current
+                  status
+                type: string
+              phase:
+                description: Phase represents the current phase of the database connection
+                enum:
+                - Pending
+                - Configuring
+                - Ready
+                - Error
+                type: string
+              requiredExtensions:
+                description: RequiredExtensions lists the extensions that need to
+                  be installed
+                items:
+                  type: string
+                type: array
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

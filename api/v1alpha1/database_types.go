@@ -45,7 +45,7 @@ type SecretReference struct {
 // DatabaseStatus defines the observed state of Database
 type DatabaseStatus struct {
 	// Phase represents the current phase of the database connection
-	// +kubebuilder:validation:Enum=Pending;Ready;Error
+	// +kubebuilder:validation:Enum=Pending;Configuring;Ready;Error
 	Phase string `json:"phase,omitempty"`
 
 	// Message provides additional information about the current status
@@ -59,6 +59,26 @@ type DatabaseStatus struct {
 	// ConfigMapRef references the ConfigMap where the database configuration is stored
 	// +optional
 	ConfigMapRef string `json:"configMapRef,omitempty"`
+
+	// ConnectionStatus indicates if the database is reachable
+	// +optional
+	ConnectionStatus string `json:"connectionStatus,omitempty"`
+
+	// ExtensionsReady indicates if required extensions are installed and configured
+	// +optional
+	ExtensionsReady bool `json:"extensionsReady,omitempty"`
+
+	// RequiredExtensions lists the extensions that need to be installed
+	// +optional
+	RequiredExtensions []string `json:"requiredExtensions,omitempty"`
+
+	// InstalledExtensions lists the extensions that are currently installed
+	// +optional
+	InstalledExtensions []string `json:"installedExtensions,omitempty"`
+
+	// LastError stores the last error encountered during setup
+	// +optional
+	LastError string `json:"lastError,omitempty"`
 
 	// Conditions represent the latest available observations of the Database's state
 	// +optional

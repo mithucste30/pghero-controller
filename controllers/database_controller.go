@@ -2,9 +2,12 @@ package controllers
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
+	_ "github.com/lib/pq"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -67,17 +70,30 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Get database URL
 	dbURL, err := r.getDatabaseURL(ctx, database)
 	if err != nil {
-		return r.updateStatus(ctx, database, "Error", fmt.Sprintf("Failed to get database URL: %v", err), "")
+		return r.updateStatus(ctx, database, "Error", fmt.Sprintf("Failed to get database URL: %v", err), "", false)
+	}
+
+	// Setup database extensions (only for PostgreSQL)
+	if database.Spec.DatabaseType == "postgresql" || database.Spec.DatabaseType == "" {
+		setupComplete, err := r.setupDatabaseExtensions(ctx, database, dbURL)
+		if err != nil {
+			logger.Error(err, "Failed to setup database extensions, will retry")
+			return r.updateStatus(ctx, database, "Configuring", fmt.Sprintf("Setting up database extensions: %v", err), "", false)
+		}
+		if !setupComplete {
+			logger.Info("Database extensions not ready yet, will retry")
+			return r.updateStatus(ctx, database, "Configuring", "Setting up required database extensions", "", false)
+		}
 	}
 
 	// Create or update ConfigMap
 	configMapRef, err := r.reconcileConfigMap(ctx, database, dbURL)
 	if err != nil {
-		return r.updateStatus(ctx, database, "Error", fmt.Sprintf("Failed to reconcile ConfigMap: %v", err), "")
+		return r.updateStatus(ctx, database, "Error", fmt.Sprintf("Failed to reconcile ConfigMap: %v", err), "", database.Status.ExtensionsReady)
 	}
 
 	// Update status
-	return r.updateStatus(ctx, database, "Ready", "Database configuration synchronized", configMapRef)
+	return r.updateStatus(ctx, database, "Ready", "Database configuration synchronized", configMapRef, true)
 }
 
 // getDatabaseURL retrieves the database URL from either the spec or a secret
@@ -109,6 +125,141 @@ func (r *DatabaseReconciler) getDatabaseURL(ctx context.Context, database *pgher
 
 	// Otherwise, use the URL from spec
 	return database.Spec.URL, nil
+}
+
+// setupDatabaseExtensions checks and sets up required PostgreSQL extensions
+func (r *DatabaseReconciler) setupDatabaseExtensions(ctx context.Context, database *pgherov1alpha1.Database, dbURL string) (bool, error) {
+	logger := log.FromContext(ctx)
+
+	// Required extensions for PgHero
+	requiredExtensions := []string{"pg_stat_statements"}
+
+	// Connect to the database
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		database.Status.ConnectionStatus = "Failed"
+		database.Status.LastError = fmt.Sprintf("Failed to connect: %v", err)
+		return false, fmt.Errorf("failed to open database connection: %w", err)
+	}
+	defer db.Close()
+
+	// Set connection timeout
+	db.SetConnMaxLifetime(10 * time.Second)
+	db.SetMaxOpenConns(1)
+
+	// Test connection
+	if err := db.PingContext(ctx); err != nil {
+		database.Status.ConnectionStatus = "Unreachable"
+		database.Status.LastError = fmt.Sprintf("Database unreachable: %v", err)
+		return false, fmt.Errorf("database unreachable: %w", err)
+	}
+
+	database.Status.ConnectionStatus = "Connected"
+	database.Status.RequiredExtensions = requiredExtensions
+
+	// Check installed extensions
+	rows, err := db.QueryContext(ctx, "SELECT extname FROM pg_extension")
+	if err != nil {
+		database.Status.LastError = fmt.Sprintf("Failed to query extensions: %v", err)
+		return false, fmt.Errorf("failed to query extensions: %w", err)
+	}
+	defer rows.Close()
+
+	installedExtensions := []string{}
+	for rows.Next() {
+		var extname string
+		if err := rows.Scan(&extname); err != nil {
+			continue
+		}
+		installedExtensions = append(installedExtensions, extname)
+	}
+	database.Status.InstalledExtensions = installedExtensions
+
+	// Check if all required extensions are installed
+	missingExtensions := []string{}
+	for _, required := range requiredExtensions {
+		found := false
+		for _, installed := range installedExtensions {
+			if installed == required {
+				found = true
+				break
+			}
+		}
+		if !found {
+			missingExtensions = append(missingExtensions, required)
+		}
+	}
+
+	// If all extensions are installed, we're done
+	if len(missingExtensions) == 0 {
+		database.Status.ExtensionsReady = true
+		database.Status.LastError = ""
+		logger.Info("All required extensions are installed", "Database", database.Name)
+		return true, nil
+	}
+
+	// Try to install missing extensions
+	logger.Info("Attempting to install missing extensions", "Database", database.Name, "Missing", missingExtensions)
+
+	for _, ext := range missingExtensions {
+		createSQL := fmt.Sprintf("CREATE EXTENSION IF NOT EXISTS %s", ext)
+		_, err := db.ExecContext(ctx, createSQL)
+		if err != nil {
+			// If we can't install, check if it's a permission error
+			errMsg := err.Error()
+			if strings.Contains(errMsg, "permission denied") || strings.Contains(errMsg, "must be superuser") {
+				database.Status.LastError = fmt.Sprintf("Permission denied to create extension %s. Database user needs superuser privileges or the extension must be pre-installed by a superuser.", ext)
+				database.Status.ExtensionsReady = false
+				logger.Error(err, "Permission denied to create extension", "Extension", ext)
+				// Don't return error - just keep status as not ready
+				return false, nil
+			}
+			database.Status.LastError = fmt.Sprintf("Failed to create extension %s: %v", ext, err)
+			return false, fmt.Errorf("failed to create extension %s: %w", ext, err)
+		}
+		logger.Info("Successfully installed extension", "Extension", ext)
+	}
+
+	// Verify extensions are now installed
+	rows, err = db.QueryContext(ctx, "SELECT extname FROM pg_extension")
+	if err != nil {
+		return false, fmt.Errorf("failed to verify extensions: %w", err)
+	}
+	defer rows.Close()
+
+	installedExtensions = []string{}
+	for rows.Next() {
+		var extname string
+		if err := rows.Scan(&extname); err != nil {
+			continue
+		}
+		installedExtensions = append(installedExtensions, extname)
+	}
+	database.Status.InstalledExtensions = installedExtensions
+
+	// Check again
+	allInstalled := true
+	for _, required := range requiredExtensions {
+		found := false
+		for _, installed := range installedExtensions {
+			if installed == required {
+				found = true
+				break
+			}
+		}
+		if !found {
+			allInstalled = false
+			break
+		}
+	}
+
+	database.Status.ExtensionsReady = allInstalled
+	if allInstalled {
+		database.Status.LastError = ""
+		logger.Info("All extensions successfully installed", "Database", database.Name)
+	}
+
+	return allInstalled, nil
 }
 
 // reconcileConfigMap creates or updates the aggregated ConfigMap with all database configurations
@@ -208,11 +359,12 @@ func (r *DatabaseReconciler) generateDatabaseConfig(database *pgherov1alpha1.Dat
 }
 
 // updateStatus updates the status of the Database resource
-func (r *DatabaseReconciler) updateStatus(ctx context.Context, database *pgherov1alpha1.Database, phase, message, configMapRef string) (ctrl.Result, error) {
+func (r *DatabaseReconciler) updateStatus(ctx context.Context, database *pgherov1alpha1.Database, phase, message, configMapRef string, extensionsReady bool) (ctrl.Result, error) {
 	database.Status.Phase = phase
 	database.Status.Message = message
 	database.Status.LastUpdated = metav1.Now()
 	database.Status.ConfigMapRef = configMapRef
+	database.Status.ExtensionsReady = extensionsReady
 
 	// Update conditions
 	condition := metav1.Condition{
@@ -223,7 +375,7 @@ func (r *DatabaseReconciler) updateStatus(ctx context.Context, database *pgherov
 		LastTransitionTime: metav1.Now(),
 	}
 
-	if phase == "Error" {
+	if phase == "Error" || phase == "Configuring" {
 		condition.Status = metav1.ConditionFalse
 	}
 
@@ -244,9 +396,16 @@ func (r *DatabaseReconciler) updateStatus(ctx context.Context, database *pgherov
 		return ctrl.Result{}, err
 	}
 
-	// Requeue after 5 minutes to ensure config is in sync
+	// Requeue based on phase
 	if phase == "Ready" {
+		// Requeue after 5 minutes to ensure config is in sync
 		return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+	} else if phase == "Configuring" {
+		// Retry extension setup after 30 seconds
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	} else if phase == "Error" {
+		// Retry errors after 1 minute
+		return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
 	}
 
 	return ctrl.Result{}, nil
