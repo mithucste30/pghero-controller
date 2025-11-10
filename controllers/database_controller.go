@@ -111,11 +111,41 @@ func (r *DatabaseReconciler) getDatabaseURL(ctx context.Context, database *pgher
 	return database.Spec.URL, nil
 }
 
-// reconcileConfigMap creates or updates the ConfigMap with database configuration
+// reconcileConfigMap creates or updates the aggregated ConfigMap with all database configurations
 func (r *DatabaseReconciler) reconcileConfigMap(ctx context.Context, database *pgherov1alpha1.Database, dbURL string) (string, error) {
 	logger := log.FromContext(ctx)
 
-	configMapName := fmt.Sprintf("pghero-database-%s", database.Name)
+	// Use a single aggregated ConfigMap name
+	configMapName := "pghero-databases"
+
+	// List all Database resources in the namespace
+	databaseList := &pgherov1alpha1.DatabaseList{}
+	if err := r.List(ctx, databaseList, client.InNamespace(database.Namespace)); err != nil {
+		return "", fmt.Errorf("failed to list databases: %w", err)
+	}
+
+	// Build aggregated configuration
+	aggregatedConfig := "databases:\n"
+	for _, db := range databaseList.Items {
+		var url string
+		var err error
+
+		// Get database URL for each database
+		if db.Name == database.Name {
+			url = dbURL // Use the already fetched URL for current database
+		} else {
+			url, err = r.getDatabaseURL(ctx, &db)
+			if err != nil {
+				logger.Error(err, "Failed to get database URL", "Database", db.Name)
+				continue
+			}
+		}
+
+		if db.Spec.Enabled {
+			aggregatedConfig += fmt.Sprintf("  %s:\n", db.Spec.Name)
+			aggregatedConfig += fmt.Sprintf("    url: %s\n", url)
+		}
+	}
 
 	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -126,22 +156,20 @@ func (r *DatabaseReconciler) reconcileConfigMap(ctx context.Context, database *p
 				"app.kubernetes.io/component":  "database-config",
 				"app.kubernetes.io/managed-by": "pghero-controller",
 			},
+			Annotations: map[string]string{
+				"pghero.mithucste30.io/database-count": fmt.Sprintf("%d", len(databaseList.Items)),
+			},
 		},
 		Data: map[string]string{
-			"database.yml": r.generateDatabaseConfig(database, dbURL),
+			"database.yml": aggregatedConfig,
 		},
-	}
-
-	// Set Database instance as the owner
-	if err := controllerutil.SetControllerReference(database, configMap, r.Scheme); err != nil {
-		return "", err
 	}
 
 	// Create or update ConfigMap
 	found := &corev1.ConfigMap{}
 	err := r.Get(ctx, types.NamespacedName{Name: configMapName, Namespace: database.Namespace}, found)
 	if err != nil && errors.IsNotFound(err) {
-		logger.Info("Creating a new ConfigMap", "ConfigMap.Namespace", configMap.Namespace, "ConfigMap.Name", configMap.Name)
+		logger.Info("Creating aggregated ConfigMap", "ConfigMap.Namespace", configMap.Namespace, "ConfigMap.Name", configMap.Name)
 		err = r.Create(ctx, configMap)
 		if err != nil {
 			return "", err
@@ -152,7 +180,8 @@ func (r *DatabaseReconciler) reconcileConfigMap(ctx context.Context, database *p
 		// Update existing ConfigMap
 		found.Data = configMap.Data
 		found.Labels = configMap.Labels
-		logger.Info("Updating existing ConfigMap", "ConfigMap.Namespace", found.Namespace, "ConfigMap.Name", found.Name)
+		found.Annotations = configMap.Annotations
+		logger.Info("Updating aggregated ConfigMap", "ConfigMap.Namespace", found.Namespace, "ConfigMap.Name", found.Name, "DatabaseCount", len(databaseList.Items))
 		err = r.Update(ctx, found)
 		if err != nil {
 			return "", err
@@ -228,8 +257,14 @@ func (r *DatabaseReconciler) handleDeletion(ctx context.Context, database *pgher
 	logger := log.FromContext(ctx)
 
 	if controllerutil.ContainsFinalizer(database, databaseFinalizer) {
-		// Perform cleanup (ConfigMap will be deleted automatically via owner reference)
-		logger.Info("Cleaning up Database resource", "Database.Name", database.Name)
+		// Update the aggregated ConfigMap to remove this database
+		logger.Info("Updating aggregated ConfigMap after deletion", "Database.Name", database.Name)
+
+		// Rebuild aggregated ConfigMap without this database
+		if err := r.rebuildAggregatedConfigMap(ctx, database.Namespace, database.Name); err != nil {
+			logger.Error(err, "Failed to rebuild aggregated ConfigMap")
+			// Continue with deletion even if ConfigMap update fails
+		}
 
 		// Remove finalizer
 		controllerutil.RemoveFinalizer(database, databaseFinalizer)
@@ -239,6 +274,57 @@ func (r *DatabaseReconciler) handleDeletion(ctx context.Context, database *pgher
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// rebuildAggregatedConfigMap rebuilds the aggregated ConfigMap excluding a specific database
+func (r *DatabaseReconciler) rebuildAggregatedConfigMap(ctx context.Context, namespace, excludeDB string) error {
+	logger := log.FromContext(ctx)
+	configMapName := "pghero-databases"
+
+	// List all Database resources in the namespace
+	databaseList := &pgherov1alpha1.DatabaseList{}
+	if err := r.List(ctx, databaseList, client.InNamespace(namespace)); err != nil {
+		return fmt.Errorf("failed to list databases: %w", err)
+	}
+
+	// Build aggregated configuration, excluding the deleted database
+	aggregatedConfig := "databases:\n"
+	count := 0
+	for _, db := range databaseList.Items {
+		if db.Name == excludeDB {
+			continue // Skip the database being deleted
+		}
+
+		url, err := r.getDatabaseURL(ctx, &db)
+		if err != nil {
+			logger.Error(err, "Failed to get database URL", "Database", db.Name)
+			continue
+		}
+
+		if db.Spec.Enabled {
+			aggregatedConfig += fmt.Sprintf("  %s:\n", db.Spec.Name)
+			aggregatedConfig += fmt.Sprintf("    url: %s\n", url)
+			count++
+		}
+	}
+
+	// Get existing ConfigMap
+	configMap := &corev1.ConfigMap{}
+	err := r.Get(ctx, types.NamespacedName{Name: configMapName, Namespace: namespace}, configMap)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// ConfigMap doesn't exist, nothing to update
+			return nil
+		}
+		return err
+	}
+
+	// Update ConfigMap
+	configMap.Data["database.yml"] = aggregatedConfig
+	configMap.Annotations["pghero.mithucste30.io/database-count"] = fmt.Sprintf("%d", count)
+
+	logger.Info("Updating aggregated ConfigMap", "ConfigMap.Name", configMapName, "DatabaseCount", count)
+	return r.Update(ctx, configMap)
 }
 
 // SetupWithManager sets up the controller with the Manager

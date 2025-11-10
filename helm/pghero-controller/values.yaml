@@ -200,6 +200,13 @@ pghero:
   # Enable PgHero deployment
   enabled: false
 
+  # Auto-reload configuration
+  # Requires Reloader (https://github.com/stakater/Reloader) to be installed
+  # Install with: kubectl apply -f https://raw.githubusercontent.com/stakater/Reloader/master/deployments/kubernetes/reloader.yaml
+  # When Database CRDs change, the aggregated ConfigMap is updated and Reloader will restart PgHero
+  autoReload:
+    enabled: true
+
   # Number of PgHero replicas
   replicaCount: 1
 

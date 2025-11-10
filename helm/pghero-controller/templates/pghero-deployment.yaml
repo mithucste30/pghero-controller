@@ -15,7 +15,10 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: {{ include (print $.Template.BasePath "/pghero-configmap.yaml") . | sha256sum }}
+        {{- if .Values.pghero.autoReload.enabled }}
+        # Reloader will watch this ConfigMap and restart pod when it changes
+        configmap.reloader.stakater.com/reload: "pghero-databases"
+        {{- end }}
         {{- with .Values.pghero.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -44,11 +47,16 @@ spec:
         - name: DATABASE_URL
           value: {{ .Values.pghero.databaseUrl | quote }}
         {{- end }}
+        - name: PGHERO_CONFIG_PATH
+          value: "/config/database.yml"
         {{- with .Values.pghero.env }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-        {{- with .Values.pghero.volumeMounts }}
         volumeMounts:
+        - name: database-config
+          mountPath: /config
+          readOnly: true
+        {{- with .Values.pghero.volumeMounts }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
         livenessProbe:
@@ -67,8 +75,12 @@ spec:
           {{- toYaml .Values.pghero.resources | nindent 10 }}
         securityContext:
           {{- toYaml .Values.pghero.securityContext | nindent 10 }}
-      {{- with .Values.pghero.volumes }}
       volumes:
+      - name: database-config
+        configMap:
+          name: pghero-databases
+          optional: true
+      {{- with .Values.pghero.volumes }}
       {{- toYaml . | nindent 6 }}
       {{- end }}
       {{- with .Values.pghero.nodeSelector }}

@@ -4,6 +4,30 @@ Your release is named {{ .Release.Name }}.
 
 The PgHero Controller has been successfully deployed!
 
+{{- if .Values.pghero.enabled }}
+
+======================
+PgHero is ENABLED
+======================
+
+{{- if .Values.pghero.autoReload.enabled }}
+⚠️  Auto-reload is enabled. Make sure Reloader is installed:
+   kubectl apply -f https://raw.githubusercontent.com/stakater/Reloader/master/deployments/kubernetes/reloader.yaml
+
+When you create/update/delete Database CRDs, PgHero will automatically restart to load the new configuration.
+{{- end }}
+
+PgHero Service: {{ include "pghero-controller.fullname" . }}-pghero
+{{- if eq .Values.pghero.service.type "NodePort" }}
+Access PgHero at: http://<node-ip>:{{ .Values.pghero.service.nodePort }}
+{{- end }}
+
+{{- end }}
+
+======================
+Creating Databases
+======================
+
 To get started, you can create a Database resource:
 
 cat <<EOF | kubectl apply -f -
@@ -39,6 +63,10 @@ EOF
 To check the status of your databases:
 
   kubectl get databases -n {{ .Release.Namespace }}
+
+To view the aggregated database configuration:
+
+  kubectl get configmap pghero-databases -n {{ .Release.Namespace }} -o yaml
 
 To view controller logs:
 
