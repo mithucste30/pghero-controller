@@ -4,6 +4,10 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.19.0
+    meta.helm.sh/release-name: {{ .Release.Name }}
+    meta.helm.sh/release-namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
   name: databases.pghero.mithucste30.io
 spec:
   group: pghero.mithucste30.io
@@ -71,6 +75,28 @@ spec:
               name:
                 description: Name is a friendly name for the database connection
                 type: string
+              superuserUrl:
+                description: SuperuserURL is an optional connection URL with superuser
+                  privileges for automatic extension setup
+                type: string
+              superuserUrlFromSecret:
+                description: SuperuserURLFromSecret references a Kubernetes secret
+                  containing superuser credentials
+                properties:
+                  key:
+                    description: Key is the key within the secret
+                    type: string
+                  name:
+                    description: Name is the name of the secret
+                    type: string
+                  namespace:
+                    description: Namespace is the namespace of the secret (defaults
+                      to same namespace as Database resource)
+                    type: string
+                required:
+                - key
+                - name
+                type: object
               url:
                 description: |-
                   URL is the database connection URL

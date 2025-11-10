@@ -19,6 +19,14 @@ type DatabaseSpec struct {
 	// +optional
 	URLFromSecret *SecretReference `json:"urlFromSecret,omitempty"`
 
+	// SuperuserURL is an optional connection URL with superuser privileges for automatic extension setup
+	// +optional
+	SuperuserURL string `json:"superuserUrl,omitempty"`
+
+	// SuperuserURLFromSecret references a Kubernetes secret containing superuser credentials
+	// +optional
+	SuperuserURLFromSecret *SecretReference `json:"superuserUrlFromSecret,omitempty"`
+
 	// DatabaseType specifies the type of database (postgresql, mysql, etc.)
 	// +kubebuilder:validation:Enum=postgresql;mysql
 	// +kubebuilder:default=postgresql

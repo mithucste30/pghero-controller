@@ -8,6 +8,7 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -127,6 +128,118 @@ func (r *DatabaseReconciler) getDatabaseURL(ctx context.Context, database *pgher
 	return database.Spec.URL, nil
 }
 
+// getSuperuserURL retrieves the superuser database URL from either the spec or a secret
+func (r *DatabaseReconciler) getSuperuserURL(ctx context.Context, database *pgherov1alpha1.Database, regularURL string) (string, error) {
+	// If superuserUrlFromSecret is specified, get URL from secret
+	if database.Spec.SuperuserURLFromSecret != nil {
+		secretRef := database.Spec.SuperuserURLFromSecret
+		namespace := secretRef.Namespace
+		if namespace == "" {
+			namespace = database.Namespace
+		}
+
+		secret := &corev1.Secret{}
+		err := r.Get(ctx, types.NamespacedName{
+			Name:      secretRef.Name,
+			Namespace: namespace,
+		}, secret)
+		if err != nil {
+			return "", fmt.Errorf("failed to get superuser secret %s/%s: %w", namespace, secretRef.Name, err)
+		}
+
+		url, ok := secret.Data[secretRef.Key]
+		if !ok {
+			return "", fmt.Errorf("key %s not found in superuser secret %s/%s", secretRef.Key, namespace, secretRef.Name)
+		}
+
+		return string(url), nil
+	}
+
+	// If superuserUrl is specified, use it
+	if database.Spec.SuperuserURL != "" {
+		return database.Spec.SuperuserURL, nil
+	}
+
+	// No superuser credentials provided
+	return "", nil
+}
+
+// createExtensionAsSuperuser creates an extension using superuser credentials
+func (r *DatabaseReconciler) createExtensionAsSuperuser(ctx context.Context, superuserURL, extName string, database *pgherov1alpha1.Database, logger logr.Logger) bool {
+	// Connect with superuser credentials
+	superDB, err := sql.Open("postgres", superuserURL)
+	if err != nil {
+		logger.Error(err, "Failed to connect with superuser credentials")
+		return false
+	}
+	defer superDB.Close()
+
+	superDB.SetConnMaxLifetime(10 * time.Second)
+	superDB.SetMaxOpenConns(1)
+
+	if err := superDB.PingContext(ctx); err != nil {
+		logger.Error(err, "Failed to ping database with superuser credentials")
+		return false
+	}
+
+	// Create the extension
+	createSQL := fmt.Sprintf("CREATE EXTENSION IF NOT EXISTS %s", extName)
+	_, err = superDB.ExecContext(ctx, createSQL)
+	if err != nil {
+		logger.Error(err, "Failed to create extension as superuser", "Extension", extName)
+		return false
+	}
+
+	// Extract username from regular URL to grant permissions
+	// Parse the database URL to get the username
+	username := extractUsernameFromURL(database.Spec.URL)
+	if username != "" && username != "postgres" {
+		// Grant pg_monitor role
+		grantSQL := fmt.Sprintf("GRANT pg_monitor TO %s", username)
+		_, err = superDB.ExecContext(ctx, grantSQL)
+		if err != nil {
+			logger.Error(err, "Failed to grant pg_monitor role", "User", username)
+			// Continue anyway, extension is created
+		}
+
+		// Grant execute on reset function
+		grantExecSQL := fmt.Sprintf("GRANT EXECUTE ON FUNCTION pg_stat_statements_reset TO %s", username)
+		_, err = superDB.ExecContext(ctx, grantExecSQL)
+		if err != nil {
+			logger.Error(err, "Failed to grant execute permission", "User", username)
+			// Continue anyway
+		}
+
+		logger.Info("Granted permissions to user", "User", username)
+	}
+
+	return true
+}
+
+// extractUsernameFromURL extracts the username from a PostgreSQL connection URL
+func extractUsernameFromURL(dbURL string) string {
+	// Format: postgres://username:password@host:port/database
+	if !strings.HasPrefix(dbURL, "postgres://") && !strings.HasPrefix(dbURL, "postgresql://") {
+		return ""
+	}
+
+	// Remove the protocol
+	urlWithoutProtocol := strings.TrimPrefix(dbURL, "postgres://")
+	urlWithoutProtocol = strings.TrimPrefix(urlWithoutProtocol, "postgresql://")
+
+	// Extract username (before the colon)
+	if idx := strings.Index(urlWithoutProtocol, ":"); idx > 0 {
+		return urlWithoutProtocol[:idx]
+	}
+
+	// No password, check for @
+	if idx := strings.Index(urlWithoutProtocol, "@"); idx > 0 {
+		return urlWithoutProtocol[:idx]
+	}
+
+	return ""
+}
+
 // setupDatabaseExtensions checks and sets up required PostgreSQL extensions
 func (r *DatabaseReconciler) setupDatabaseExtensions(ctx context.Context, database *pgherov1alpha1.Database, dbURL string) (bool, error) {
 	logger := log.FromContext(ctx)
@@ -208,11 +321,25 @@ func (r *DatabaseReconciler) setupDatabaseExtensions(ctx context.Context, databa
 			// If we can't install, check if it's a permission error
 			errMsg := err.Error()
 			if strings.Contains(errMsg, "permission denied") || strings.Contains(errMsg, "must be superuser") {
-				database.Status.LastError = fmt.Sprintf("Permission denied to create extension %s. Database user needs superuser privileges or the extension must be pre-installed by a superuser.", ext)
-				database.Status.ExtensionsReady = false
-				logger.Error(err, "Permission denied to create extension", "Extension", ext)
-				// Don't return error - just keep status as not ready
-				return false, nil
+				logger.Info("Permission denied with regular user, attempting with superuser credentials", "Extension", ext)
+
+				// Try to get superuser URL
+				superuserURL, err := r.getSuperuserURL(ctx, database, dbURL)
+				if err != nil || superuserURL == "" {
+					database.Status.LastError = fmt.Sprintf("Permission denied to create extension %s. Database user needs superuser privileges or provide superuser credentials via superuserUrl or superuserUrlFromSecret.", ext)
+					database.Status.ExtensionsReady = false
+					logger.Error(err, "No superuser credentials available", "Extension", ext)
+					return false, nil
+				}
+
+				// Try with superuser credentials
+				if !r.createExtensionAsSuperuser(ctx, superuserURL, ext, database, logger) {
+					database.Status.LastError = fmt.Sprintf("Failed to create extension %s even with superuser credentials", ext)
+					database.Status.ExtensionsReady = false
+					return false, nil
+				}
+				logger.Info("Successfully installed extension with superuser credentials", "Extension", ext)
+				continue
 			}
 			database.Status.LastError = fmt.Sprintf("Failed to create extension %s: %v", ext, err)
 			return false, fmt.Errorf("failed to create extension %s: %w", ext, err)
