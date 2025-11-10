@@ -67,6 +67,7 @@ jobs:
     - name: Package Helm chart
       run: |
         mkdir -p dist
+        helm dependency build ./helm/pghero-controller
         helm package ./helm/pghero-controller -d dist/
 
     - name: Create GitHub Release
