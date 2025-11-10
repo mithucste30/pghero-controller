@@ -313,26 +313,8 @@ postgresql:
       enabled: true
       size: 8Gi
 
-    # Initialize database with pg_stat_statements and proper permissions
-    initdb:
-      # Run init scripts as postgres user (superuser) to create extensions
-      user: postgres
-      password: ""  # Uses the auto-generated postgres password
-      scripts:
-        init-pghero.sql: |
-          -- Connect to the pghero database
-          \c pgherodb
-
-          -- Enable pg_stat_statements extension for query stats
-          CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
-
-          -- Grant pg_monitor role to pghero user for query stats access
-          GRANT pg_monitor TO pghero;
-
-          -- Grant execute permission on pg_stat_statements functions
-          GRANT EXECUTE ON FUNCTION pg_stat_statements_reset() TO pghero;
-
     # Enable shared_preload_libraries for pg_stat_statements
+    # The controller will automatically create the extension and grant permissions
     extendedConfiguration: |
       shared_preload_libraries = 'pg_stat_statements'
       pg_stat_statements.track = all
