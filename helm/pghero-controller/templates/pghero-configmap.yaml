@@ -1,0 +1,27 @@
+{{- if .Values.pghero.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "pghero-controller.fullname" . }}-pghero-config
+  labels:
+    {{- include "pghero-controller.labels" . | nindent 4 }}
+    app.kubernetes.io/component: pghero
+data:
+  database.yml: |
+    # PgHero database configuration
+    # This file is automatically updated by mounted Database CRD ConfigMaps
+    # See /app/config/databases/ for Database CRD-generated configurations
+    {{- if .Values.pghero.databases }}
+    databases:
+      {{- range .Values.pghero.databases }}
+      {{ .name }}:
+        url: {{ .url }}
+        {{- if .enabled }}
+        enabled: {{ .enabled }}
+        {{- end }}
+      {{- end }}
+    {{- else }}
+    # No databases configured yet
+    # Create Database CRD resources to automatically configure databases
+    {{- end }}
+{{- end }}

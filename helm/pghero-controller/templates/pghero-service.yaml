@@ -1,0 +1,26 @@
+{{- if .Values.pghero.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "pghero-controller.fullname" . }}-pghero
+  labels:
+    {{- include "pghero-controller.labels" . | nindent 4 }}
+    app.kubernetes.io/component: pghero
+  {{- with .Values.pghero.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.pghero.service.type }}
+  ports:
+  - port: {{ .Values.pghero.service.port }}
+    targetPort: http
+    protocol: TCP
+    name: http
+    {{- if and (eq .Values.pghero.service.type "NodePort") .Values.pghero.service.nodePort }}
+    nodePort: {{ .Values.pghero.service.nodePort }}
+    {{- end }}
+  selector:
+    {{- include "pghero-controller.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: pghero
+{{- end }}

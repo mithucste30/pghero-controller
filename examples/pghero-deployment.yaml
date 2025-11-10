@@ -1,0 +1,109 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pghero-config
+  namespace: default
+data:
+  # This is the base configuration file
+  # Database configs will be mounted from Database CRD-generated ConfigMaps
+  pghero.yml: |
+    # Base PgHero configuration
+    # Additional database configs are loaded from /config/databases/
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pghero
+  namespace: default
+  labels:
+    app: pghero
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pghero
+  template:
+    metadata:
+      labels:
+        app: pghero
+    spec:
+      containers:
+      - name: pghero
+        image: ankane/pghero:latest
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          value: "postgresql://dummy:dummy@localhost:5432/dummy"  # Required but can be dummy
+        volumeMounts:
+        # Mount database configurations from Database CRD-generated ConfigMaps
+        - name: database-configs
+          mountPath: /app/config/databases
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      volumes:
+      # This volume will be populated by mounting Database CRD-generated ConfigMaps
+      - name: database-configs
+        projected:
+          sources: []
+          # ConfigMaps will be dynamically added here as we create Database resources
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pghero
+  namespace: default
+  labels:
+    app: pghero
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: pghero
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pghero-nodeport
+  namespace: default
+  labels:
+    app: pghero
+spec:
+  type: NodePort
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+    nodePort: 30080
+  selector:
+    app: pghero

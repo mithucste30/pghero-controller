@@ -194,3 +194,97 @@ commonLabels: {}
 
 # Extra annotations to add to all resources
 commonAnnotations: {}
+
+# PgHero deployment configuration
+pghero:
+  # Enable PgHero deployment
+  enabled: false
+
+  # Number of PgHero replicas
+  replicaCount: 1
+
+  # PgHero image configuration
+  image:
+    repository: ankane/pghero
+    pullPolicy: IfNotPresent
+    tag: "latest"
+
+  imagePullSecrets: []
+
+  # Pod annotations
+  podAnnotations: {}
+
+  # Pod security context
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+
+  # Container security context
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+    readOnlyRootFilesystem: false
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 80
+    nodePort: null
+    annotations: {}
+
+  # Ingress configuration
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+      # kubernetes.io/ingress.class: nginx
+      # cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts:
+      - host: pghero.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+    #  - secretName: pghero-tls
+    #    hosts:
+    #      - pghero.example.com
+
+  # Resource limits and requests
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  # Node selector
+  nodeSelector: {}
+
+  # Tolerations
+  tolerations: []
+
+  # Affinity rules
+  affinity: {}
+
+  # Database URL (optional - can use Database CRDs instead)
+  databaseUrl: ""
+
+  # Static database configurations (optional)
+  # Use Database CRDs for dynamic configuration instead
+  databases: []
+  # - name: production
+  #   url: postgres://user:password@host:5432/dbname
+  #   enabled: true
+
+  # Additional environment variables
+  env: []
+
+  # Additional volumes
+  volumes: []
+
+  # Additional volume mounts
+  volumeMounts: []

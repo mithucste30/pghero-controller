@@ -1,0 +1,42 @@
+{{- if and .Values.pghero.enabled .Values.pghero.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "pghero-controller.fullname" . }}-pghero
+  labels:
+    {{- include "pghero-controller.labels" . | nindent 4 }}
+    app.kubernetes.io/component: pghero
+  {{- with .Values.pghero.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.pghero.ingress.className }}
+  ingressClassName: {{ .Values.pghero.ingress.className }}
+  {{- end }}
+  {{- if .Values.pghero.ingress.tls }}
+  tls:
+    {{- range .Values.pghero.ingress.tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .secretName }}
+    {{- end }}
+  {{- end }}
+  rules:
+    {{- range .Values.pghero.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType | default "Prefix" }}
+            backend:
+              service:
+                name: {{ include "pghero-controller.fullname" $ }}-pghero
+                port:
+                  number: {{ $.Values.pghero.service.port }}
+          {{- end }}
+    {{- end }}
+{{- end }}
