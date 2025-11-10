@@ -1,0 +1,130 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: databases.pghero.mithucste30.io
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.13.0
+spec:
+  group: pghero.mithucste30.io
+  names:
+    kind: Database
+    listKind: DatabaseList
+    plural: databases
+    singular: database
+    shortNames:
+      - db
+      - pgdb
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          description: Database is the Schema for the databases API
+          type: object
+          properties:
+            apiVersion:
+              description: 'APIVersion defines the versioned schema of this representation of an object.'
+              type: string
+            kind:
+              description: 'Kind is a string value representing the REST resource this object represents.'
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: DatabaseSpec defines the desired state of Database
+              type: object
+              required:
+                - name
+                - url
+              properties:
+                name:
+                  description: Name is a friendly name for the database connection
+                  type: string
+                url:
+                  description: 'URL is the database connection URL. Can reference a secret using syntax: secret://namespace/secret-name/key'
+                  type: string
+                urlFromSecret:
+                  description: URLFromSecret references a Kubernetes secret containing the database URL
+                  type: object
+                  required:
+                    - name
+                    - key
+                  properties:
+                    name:
+                      description: Name is the name of the secret
+                      type: string
+                    key:
+                      description: Key is the key within the secret
+                      type: string
+                    namespace:
+                      description: Namespace is the namespace of the secret (defaults to same namespace as Database resource)
+                      type: string
+                databaseType:
+                  description: DatabaseType specifies the type of database (postgresql, mysql, etc.)
+                  type: string
+                  default: postgresql
+                  enum:
+                    - postgresql
+                    - mysql
+                enabled:
+                  description: Enabled determines if this database connection should be active in PgHero
+                  type: boolean
+                  default: true
+            status:
+              description: DatabaseStatus defines the observed state of Database
+              type: object
+              properties:
+                phase:
+                  description: Phase represents the current phase of the database connection
+                  type: string
+                  enum:
+                    - Pending
+                    - Ready
+                    - Error
+                message:
+                  description: Message provides additional information about the current status
+                  type: string
+                lastUpdated:
+                  description: LastUpdated is the timestamp when the status was last updated
+                  type: string
+                  format: date-time
+                configMapRef:
+                  description: ConfigMapRef references the ConfigMap where the database configuration is stored
+                  type: string
+                conditions:
+                  description: Conditions represent the latest available observations of the Database's state
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - type
+                      - status
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Database Name
+          type: string
+          jsonPath: .spec.name
+        - name: Type
+          type: string
+          jsonPath: .spec.databaseType
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp

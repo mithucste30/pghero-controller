@@ -1,0 +1,12 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: pghero-controller-manager-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: pghero-controller-manager-role
+subjects:
+- kind: ServiceAccount
+  name: pghero-controller-manager
+  namespace: pghero-system

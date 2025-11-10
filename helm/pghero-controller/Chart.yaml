@@ -1,0 +1,20 @@
+apiVersion: v2
+name: pghero-controller
+description: Kubernetes controller for managing PgHero database connections
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - pghero
+  - postgres
+  - postgresql
+  - database
+  - monitoring
+  - controller
+home: https://github.com/mithucste30/pghero-controller
+sources:
+  - https://github.com/mithucste30/pghero-controller
+  - https://github.com/ankane/pghero
+maintainers:
+  - name: mithucste30
+icon: https://raw.githubusercontent.com/ankane/pghero/master/app/assets/images/pghero.png

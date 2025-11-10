@@ -1,0 +1,23 @@
+{{- if and .Values.metrics.enabled .Values.metrics.podMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "pghero-controller.fullname" . }}
+  labels:
+    {{- include "pghero-controller.labels" . | nindent 4 }}
+    {{- with .Values.metrics.podMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.metrics.podMonitor.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "pghero-controller.selectorLabels" . | nindent 6 }}
+  podMetricsEndpoints:
+  - port: metrics
+    interval: {{ .Values.metrics.podMonitor.interval }}
+    scrapeTimeout: {{ .Values.metrics.podMonitor.scrapeTimeout }}
+{{- end }}

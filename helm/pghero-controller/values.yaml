@@ -1,0 +1,196 @@
+# Default values for pghero-controller
+
+# Controller image configuration
+image:
+  repository: ghcr.io/mithucste30/pghero-controller
+  pullPolicy: IfNotPresent
+  tag: ""  # Overrides the image tag whose default is the chart appVersion
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Controller configuration
+controller:
+  # Number of controller replicas
+  replicas: 1
+
+  # Leader election settings
+  leaderElection:
+    enabled: true
+
+  # Log level (debug, info, error)
+  logLevel: info
+
+# Service Account configuration
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# RBAC configuration
+rbac:
+  # Specifies whether RBAC resources should be created
+  create: true
+
+# Pod annotations
+podAnnotations: {}
+
+# Pod security context
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container security context
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+
+# Service configuration for metrics and webhooks
+service:
+  type: ClusterIP
+  metricsPort: 8080
+  healthPort: 8081
+  annotations: {}
+
+# Metrics and monitoring configuration
+metrics:
+  enabled: true
+
+  # ServiceMonitor for Prometheus Operator
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+    # Additional labels for ServiceMonitor (e.g., for prometheus operator selection)
+    # Example:
+    # release: prometheus
+    annotations: {}
+    honorLabels: false
+    metricRelabelings: []
+    relabelings: []
+
+  # PodMonitor for Prometheus Operator (alternative to ServiceMonitor)
+  podMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+    annotations: {}
+
+# Health probes configuration
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: health
+  initialDelaySeconds: 15
+  periodSeconds: 20
+  timeoutSeconds: 1
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: health
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 1
+  failureThreshold: 3
+
+# Resource limits and requests
+resources:
+  limits:
+    cpu: 500m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity rules
+affinity: {}
+
+# Priority class name
+priorityClassName: ""
+
+# Pod disruption budget
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+  # maxUnavailable: 1
+
+# Network Policy
+networkPolicy:
+  enabled: false
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress:
+    # Allow DNS
+    - to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: kube-system
+      ports:
+      - protocol: UDP
+        port: 53
+    # Allow Kubernetes API
+    - to:
+      - namespaceSelector: {}
+      ports:
+      - protocol: TCP
+        port: 443
+      - protocol: TCP
+        port: 6443
+
+# CRD installation
+crds:
+  # Install CRDs with Helm
+  install: true
+  # Keep CRDs on chart uninstall
+  keep: true
+
+# Additional volumes
+volumes: []
+# - name: cache
+#   emptyDir: {}
+
+# Additional volume mounts
+volumeMounts: []
+# - name: cache
+#   mountPath: /cache
+
+# Additional environment variables
+env: []
+# - name: LOG_LEVEL
+#   value: "debug"
+
+# Additional environment variables from ConfigMap or Secret
+envFrom: []
+# - configMapRef:
+#     name: my-config
+# - secretRef:
+#     name: my-secret
+
+# Extra labels to add to all resources
+commonLabels: {}
+
+# Extra annotations to add to all resources
+commonAnnotations: {}

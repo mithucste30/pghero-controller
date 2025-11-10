@@ -1,0 +1,55 @@
+Thank you for installing {{ .Chart.Name }}.
+
+Your release is named {{ .Release.Name }}.
+
+The PgHero Controller has been successfully deployed!
+
+To get started, you can create a Database resource:
+
+cat <<EOF | kubectl apply -f -
+apiVersion: pghero.mithucste30.io/v1alpha1
+kind: Database
+metadata:
+  name: my-postgres-db
+  namespace: {{ .Release.Namespace }}
+spec:
+  name: production
+  url: postgres://user:password@localhost:5432/dbname
+  databaseType: postgresql
+  enabled: true
+EOF
+
+Or reference a secret:
+
+cat <<EOF | kubectl apply -f -
+apiVersion: pghero.mithucste30.io/v1alpha1
+kind: Database
+metadata:
+  name: my-postgres-db
+  namespace: {{ .Release.Namespace }}
+spec:
+  name: production
+  databaseType: postgresql
+  enabled: true
+  urlFromSecret:
+    name: postgres-credentials
+    key: database-url
+EOF
+
+To check the status of your databases:
+
+  kubectl get databases -n {{ .Release.Namespace }}
+
+To view controller logs:
+
+  kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "pghero-controller.name" . }}
+
+{{- if .Values.metrics.enabled }}
+
+Metrics are exposed on port {{ .Values.service.metricsPort }}
+{{- if .Values.metrics.serviceMonitor.enabled }}
+ServiceMonitor has been created for Prometheus Operator integration.
+{{- end }}
+{{- end }}
+
+For more information, visit: https://github.com/mithucste30/pghero-controller

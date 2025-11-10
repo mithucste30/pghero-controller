@@ -1,0 +1,10 @@
+apiVersion: pghero.mithucste30.io/v1alpha1
+kind: Database
+metadata:
+  name: example-database
+  namespace: default
+spec:
+  name: production
+  url: postgres://user:password@postgres.example.com:5432/mydb
+  databaseType: postgresql
+  enabled: true

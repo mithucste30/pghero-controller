@@ -1,0 +1,26 @@
+{{- if .Values.metrics.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "pghero-controller.fullname" . }}-metrics
+  labels:
+    {{- include "pghero-controller.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+  - name: metrics
+    port: {{ .Values.service.metricsPort }}
+    targetPort: metrics
+    protocol: TCP
+  - name: health
+    port: {{ .Values.service.healthPort }}
+    targetPort: health
+    protocol: TCP
+  selector:
+    {{- include "pghero-controller.selectorLabels" . | nindent 4 }}
+{{- end }}
