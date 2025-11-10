@@ -1,6 +1,6 @@
 module github.com/mithucste30/pghero-controller
 
-go 1.24
+go 1.24.0
 
 require (
 	k8s.io/api v0.34.1
